@@ -825,6 +825,13 @@ type ConnectionStats struct {
 	// (does not monotonically increase, because packets that are declared lost
 	// can subsequently be received).
 	PacketsLost uint64
+
+	// CongestionWindow is the current congestion window (bytes) of the 1-RTT
+	// send algorithm. BytesInFlight is bytes sent but not yet acked. A multipath
+	// scheduler above QUIC uses (CongestionWindow − BytesInFlight) as the
+	// available window for cwnd-aware path selection.
+	CongestionWindow uint64
+	BytesInFlight    uint64
 }
 
 func (c *Conn) ConnectionStats() ConnectionStats {
@@ -840,6 +847,9 @@ func (c *Conn) ConnectionStats() ConnectionStats {
 		PacketsReceived: c.connStats.PacketsReceived.Load(),
 		BytesLost:       c.connStats.BytesLost.Load(),
 		PacketsLost:     c.connStats.PacketsLost.Load(),
+
+		CongestionWindow: uint64(c.sentPacketHandler.GetCongestionWindow()),
+		BytesInFlight:    uint64(c.sentPacketHandler.GetBytesInFlight()),
 	}
 }
 

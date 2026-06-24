@@ -3,6 +3,7 @@ package ackhandler
 import (
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/quic-go/quic-go/internal/congestion"
@@ -129,14 +130,16 @@ func NewSentPacketHandler(
 	qlogger qlogwriter.Recorder,
 	logger utils.Logger,
 ) SentPacketHandler {
-	congestion := congestion.NewCubicSender(
-		congestion.DefaultClock{},
-		rttStats,
-		connStats,
-		initialMaxDatagramSize,
-		true, // use Reno
-		qlogger,
-	)
+	// Congestion controller selection. Default = Cubic/Reno (upstream behaviour).
+	// QUIC_CONGESTION_CONTROL=bbr selects the BBRv1 sender (loss-resilient) — set
+	// per-process so a single baseline (e.g. XNC/CellFusion, which §4.2 specifies
+	// uses BBR) opts in without affecting other QUIC stacks in other processes.
+	var cc congestion.SendAlgorithmWithDebugInfos
+	if os.Getenv("QUIC_CONGESTION_CONTROL") == "bbr" {
+		cc = congestion.NewBBRSender(congestion.DefaultClock{}, rttStats, connStats, initialMaxDatagramSize, qlogger)
+	} else {
+		cc = congestion.NewCubicSender(congestion.DefaultClock{}, rttStats, connStats, initialMaxDatagramSize, true /* Reno */, qlogger)
+	}
 
 	h := &sentPacketHandler{
 		peerCompletedAddressValidation: pers == protocol.PerspectiveServer,
@@ -147,7 +150,7 @@ func NewSentPacketHandler(
 		lostPackets:                    *newLostPacketTracker(64),
 		rttStats:                       rttStats,
 		connStats:                      connStats,
-		congestion:                     congestion,
+		congestion:                     cc,
 		ignorePacketsBelow:             ignorePacketsBelow,
 		perspective:                    pers,
 		qlogger:                        qlogger,
@@ -1026,6 +1029,12 @@ func (h *sentPacketHandler) SendMode(now monotime.Time) SendMode {
 func (h *sentPacketHandler) TimeUntilSend() monotime.Time {
 	return h.congestion.TimeUntilSend(h.bytesInFlight)
 }
+
+func (h *sentPacketHandler) GetCongestionWindow() protocol.ByteCount {
+	return h.congestion.GetCongestionWindow()
+}
+
+func (h *sentPacketHandler) GetBytesInFlight() protocol.ByteCount { return h.bytesInFlight }
 
 func (h *sentPacketHandler) SetMaxDatagramSize(s protocol.ByteCount) {
 	h.congestion.SetMaxDatagramSize(s)

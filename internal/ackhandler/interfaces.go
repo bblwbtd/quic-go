@@ -36,4 +36,12 @@ type SentPacketHandler interface {
 	OnLossDetectionTimeout(now monotime.Time) error
 
 	MigratedPath(now monotime.Time, initialMaxPacketSize protocol.ByteCount)
+
+	// GetCongestionWindow returns the current congestion window (bytes). Exposed so a
+	// multipath scheduler above QUIC can do cwnd-aware path selection (CellFusion's
+	// "lowest-RTT path WITH available congestion window").
+	GetCongestionWindow() protocol.ByteCount
+	// GetBytesInFlight returns bytes sent but not yet acked. cwnd − inflight = the
+	// available window the scheduler checks.
+	GetBytesInFlight() protocol.ByteCount
 }
